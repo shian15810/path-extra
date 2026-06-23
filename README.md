@@ -1,3 +1,3 @@
-# iotools
+# path-extra
 
-Extra io traits for fs and path with support for sync and async runtimes.
+Extra traits for path and fs with support for std and tokio.

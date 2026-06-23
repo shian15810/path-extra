@@ -1,0 +1,9 @@
+[package]
+name = "path-extra"
+version = "0.0.0"
+edition = "2024"
+description = "Extra traits for path and fs with support for std and tokio."
+repository = "https://github.com/shian15810/path-extra"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
