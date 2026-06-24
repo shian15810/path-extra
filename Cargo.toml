@@ -5,5 +5,12 @@ edition = "2024"
 description = "Extra traits for path and fs with support for std and tokio."
 repository = "https://github.com/shian15810/path-extra"
 license = "MIT OR Apache-2.0"
+keywords = ["ext", "file", "fs", "path", "trait"]
+categories = ["rust-patterns"]
 
 [dependencies]
+pathdiff = "0.2.3"
+tokio = { version = "1.52.3", features = ["fs"], optional = true }
+
+[features]
+tokio = ["dep:tokio"]
