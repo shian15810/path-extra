@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use tokio::fs;
+use super::path::PathExt as _;
 
 pub(super) struct TempPath {
     path: PathBuf,
@@ -32,7 +32,7 @@ impl TempPath {
     }
 
     pub(super) async fn persist(mut self, to: impl AsRef<Path>) -> io::Result<()> {
-        fs::rename(&self.path, to).await?;
+        self.path.rename(to).await?;
 
         mem::take(&mut self.path);
 
@@ -42,12 +42,15 @@ impl TempPath {
     }
 }
 
-impl Drop for TempPath {
-    fn drop(&mut self) {
-        use std::fs;
+mod drop {
+    use super::TempPath;
+    use crate::std::path::PathExt as _;
 
-        if fs::remove_file(&self.path).is_err() {
-            let _ = fs::remove_dir_all(&self.path);
+    impl Drop for TempPath {
+        fn drop(&mut self) {
+            if self.path.remove_file().is_err() {
+                let _ = self.path.remove_dir_all();
+            }
         }
     }
 }

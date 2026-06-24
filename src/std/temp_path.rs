@@ -1,9 +1,10 @@
 use std::{
-    fs,
     io,
     mem,
     path::{Path, PathBuf},
 };
+
+use super::path::PathExt as _;
 
 pub(super) struct TempPath {
     path: PathBuf,
@@ -31,7 +32,7 @@ impl TempPath {
     }
 
     pub(super) fn persist(mut self, to: impl AsRef<Path>) -> io::Result<()> {
-        fs::rename(&self.path, to)?;
+        self.path.rename(to)?;
 
         mem::take(&mut self.path);
 
@@ -43,8 +44,8 @@ impl TempPath {
 
 impl Drop for TempPath {
     fn drop(&mut self) {
-        if fs::remove_file(&self.path).is_err() {
-            let _ = fs::remove_dir_all(&self.path);
+        if self.path.remove_file().is_err() {
+            let _ = self.path.remove_dir_all();
         }
     }
 }
