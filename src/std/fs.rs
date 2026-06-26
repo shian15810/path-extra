@@ -20,11 +20,11 @@ pub trait FileExt {
         Self: Sized;
 
     #[cfg(unix)]
-    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<()>;
+    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
-    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<()>;
+    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
-    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<()>;
+    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
 }
 
 impl FileExt for File {
@@ -57,38 +57,44 @@ impl FileExt for File {
 
     #[cfg(unix)]
     #[inline]
-    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<()> {
+    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
         let metadata = self.metadata()?;
 
         let mut permissions = metadata.permissions();
 
         permissions.set_mode(permissions_mode);
 
-        self.set_permissions(permissions)
+        self.set_permissions(permissions)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<()> {
+    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
         let metadata = self.metadata()?;
 
         let mut permissions = metadata.permissions();
 
         permissions.set_mode(permissions.mode() | permissions_mode);
 
-        self.set_permissions(permissions)
+        self.set_permissions(permissions)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<()> {
+    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
         let metadata = self.metadata()?;
 
         let mut permissions = metadata.permissions();
 
         permissions.set_mode(permissions.mode() & !permissions_mode);
 
-        self.set_permissions(permissions)
+        self.set_permissions(permissions)?;
+
+        Ok(self)
     }
 }
 

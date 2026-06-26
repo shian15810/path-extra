@@ -47,19 +47,19 @@ pub trait PathExt {
     fn is_read_dir_empty(&self) -> io::Result<bool>;
     fn is_read_dir_empty_if_exists(&self) -> io::Result<Option<bool>>;
 
-    fn create_dir_all(&self) -> io::Result<()>;
+    fn create_dir_all(&self) -> io::Result<&Self>;
 
-    fn create_dir(&self) -> io::Result<()>;
-    fn create_dir_if_not_exists(&self) -> io::Result<Option<()>>;
+    fn create_dir(&self) -> io::Result<&Self>;
+    fn create_dir_if_not_exists(&self) -> io::Result<Option<&Self>>;
 
-    fn write_new(&self, contents: impl AsRef<[u8]>) -> io::Result<()>;
-    fn write_new_if_not_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<()>>;
+    fn write_new(&self, contents: impl AsRef<[u8]>) -> io::Result<&Self>;
+    fn write_new_if_not_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<&Self>>;
 
-    fn write(&self, contents: impl AsRef<[u8]>) -> io::Result<()>;
-    fn write_if_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<()>>;
+    fn write(&self, contents: impl AsRef<[u8]>) -> io::Result<&Self>;
+    fn write_if_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<&Self>>;
 
-    fn append(&self, contents: impl AsRef<[u8]>) -> io::Result<()>;
-    fn append_if_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<()>>;
+    fn append(&self, contents: impl AsRef<[u8]>) -> io::Result<&Self>;
+    fn append_if_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<&Self>>;
 
     fn read(&self) -> io::Result<Vec<u8>>;
     fn read_if_exists(&self) -> io::Result<Option<Vec<u8>>>;
@@ -67,48 +67,48 @@ pub trait PathExt {
     fn read_to_string(&self) -> io::Result<String>;
     fn read_to_string_if_exists(&self) -> io::Result<Option<String>>;
 
-    fn copy(&self, to: impl AsRef<Self>) -> io::Result<u64>;
-    fn copy_if_exists(&self, to: impl AsRef<Self>) -> io::Result<Option<u64>>;
+    fn copy(&self, to: impl AsRef<Self>) -> io::Result<&Self>;
+    fn copy_if_exists(&self, to: impl AsRef<Self>) -> io::Result<Option<&Self>>;
 
-    fn rename(&self, to: impl AsRef<Self>) -> io::Result<()>;
-    fn rename_if_exists(&self, to: impl AsRef<Self>) -> io::Result<Option<()>>;
+    fn rename(&self, to: impl AsRef<Self>) -> io::Result<&Self>;
+    fn rename_if_exists(&self, to: impl AsRef<Self>) -> io::Result<Option<&Self>>;
 
-    fn remove_file(&self) -> io::Result<()>;
-    fn remove_file_if_exists(&self) -> io::Result<Option<()>>;
+    fn remove_file(&self) -> io::Result<&Self>;
+    fn remove_file_if_exists(&self) -> io::Result<Option<&Self>>;
 
-    fn remove_dir(&self) -> io::Result<()>;
-    fn remove_dir_if_exists(&self) -> io::Result<Option<()>>;
+    fn remove_dir(&self) -> io::Result<&Self>;
+    fn remove_dir_if_exists(&self) -> io::Result<Option<&Self>>;
 
-    fn remove_dir_all(&self) -> io::Result<()>;
-    fn remove_dir_all_if_exists(&self) -> io::Result<Option<()>>;
+    fn remove_dir_all(&self) -> io::Result<&Self>;
+    fn remove_dir_all_if_exists(&self) -> io::Result<Option<&Self>>;
 
-    fn hard_link(&self, link: impl AsRef<Self>) -> io::Result<()>;
-    fn hard_link_atomic(&self, link: impl AsRef<Self>) -> io::Result<()>;
-
-    #[cfg(unix)]
-    fn symlink(&self, link: impl AsRef<Self>) -> io::Result<()>;
-    #[cfg(unix)]
-    fn symlink_atomic(&self, link: impl AsRef<Self>) -> io::Result<()>;
+    fn hard_link(&self, link: impl AsRef<Self>) -> io::Result<&Self>;
+    fn hard_link_atomic(&self, link: impl AsRef<Self>) -> io::Result<&Self>;
 
     #[cfg(unix)]
-    fn symlink_absolute(&self, link: impl AsRef<Self>) -> io::Result<()>;
+    fn symlink(&self, link: impl AsRef<Self>) -> io::Result<&Self>;
     #[cfg(unix)]
-    fn symlink_absolute_atomic(&self, link: impl AsRef<Self>) -> io::Result<()>;
+    fn symlink_atomic(&self, link: impl AsRef<Self>) -> io::Result<&Self>;
 
     #[cfg(unix)]
-    fn symlink_relative(&self, link: impl AsRef<Self>) -> io::Result<()>;
+    fn symlink_absolute(&self, link: impl AsRef<Self>) -> io::Result<&Self>;
     #[cfg(unix)]
-    fn symlink_relative_atomic(&self, link: impl AsRef<Self>) -> io::Result<()>;
+    fn symlink_absolute_atomic(&self, link: impl AsRef<Self>) -> io::Result<&Self>;
 
     #[cfg(unix)]
-    fn set_permissions(&self, permissions: Permissions) -> io::Result<()>;
+    fn symlink_relative(&self, link: impl AsRef<Self>) -> io::Result<&Self>;
+    #[cfg(unix)]
+    fn symlink_relative_atomic(&self, link: impl AsRef<Self>) -> io::Result<&Self>;
 
     #[cfg(unix)]
-    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<()>;
+    fn set_permissions(&self, permissions: Permissions) -> io::Result<&Self>;
+
     #[cfg(unix)]
-    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<()>;
+    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
-    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<()>;
+    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
+    #[cfg(unix)]
+    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
 }
 
 impl PathExt for Path {
@@ -289,51 +289,59 @@ impl PathExt for Path {
     }
 
     #[inline]
-    fn create_dir_all(&self) -> io::Result<()> {
-        fs::create_dir_all(self)
+    fn create_dir_all(&self) -> io::Result<&Self> {
+        fs::create_dir_all(self)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn create_dir(&self) -> io::Result<()> {
-        fs::create_dir(self)
+    fn create_dir(&self) -> io::Result<&Self> {
+        fs::create_dir(self)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn create_dir_if_not_exists(&self) -> io::Result<Option<()>> {
+    fn create_dir_if_not_exists(&self) -> io::Result<Option<&Self>> {
         match self.create_dir() {
-            Ok(()) => Ok(Some(())),
+            Ok(this) => Ok(Some(this)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
             Err(err) => Err(err),
         }
     }
 
     #[inline]
-    fn write_new(&self, contents: impl AsRef<[u8]>) -> io::Result<()> {
+    fn write_new(&self, contents: impl AsRef<[u8]>) -> io::Result<&Self> {
         let mut options = File::options();
 
         options.write(true).create_new(true);
 
         let mut file = options.open(self)?;
 
-        file.write_all(contents.as_ref())
+        file.write_all(contents.as_ref())?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn write_new_if_not_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<()>> {
+    fn write_new_if_not_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<&Self>> {
         match self.write_new(contents) {
-            Ok(()) => Ok(Some(())),
+            Ok(this) => Ok(Some(this)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
             Err(err) => Err(err),
         }
     }
 
     #[inline]
-    fn write(&self, contents: impl AsRef<[u8]>) -> io::Result<()> {
-        fs::write(self, contents)
+    fn write(&self, contents: impl AsRef<[u8]>) -> io::Result<&Self> {
+        fs::write(self, contents)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn write_if_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<()>> {
+    fn write_if_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<&Self>> {
         let mut options = File::options();
 
         options.write(true).truncate(true);
@@ -342,7 +350,7 @@ impl PathExt for Path {
             Ok(mut file) => {
                 file.write_all(contents.as_ref())?;
 
-                Ok(Some(()))
+                Ok(Some(self))
             },
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
@@ -350,18 +358,20 @@ impl PathExt for Path {
     }
 
     #[inline]
-    fn append(&self, contents: impl AsRef<[u8]>) -> io::Result<()> {
+    fn append(&self, contents: impl AsRef<[u8]>) -> io::Result<&Self> {
         let mut options = File::options();
 
         options.append(true).create(true);
 
         let mut file = options.open(self)?;
 
-        file.write_all(contents.as_ref())
+        file.write_all(contents.as_ref())?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn append_if_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<()>> {
+    fn append_if_exists(&self, contents: impl AsRef<[u8]>) -> io::Result<Option<&Self>> {
         let mut options = File::options();
 
         options.append(true);
@@ -370,7 +380,7 @@ impl PathExt for Path {
             Ok(mut file) => {
                 file.write_all(contents.as_ref())?;
 
-                Ok(Some(()))
+                Ok(Some(self))
             },
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
@@ -406,14 +416,16 @@ impl PathExt for Path {
     }
 
     #[inline]
-    fn copy(&self, to: impl AsRef<Self>) -> io::Result<u64> {
-        fs::copy(self, to)
+    fn copy(&self, to: impl AsRef<Self>) -> io::Result<&Self> {
+        fs::copy(self, to)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn copy_if_exists(&self, to: impl AsRef<Self>) -> io::Result<Option<u64>> {
+    fn copy_if_exists(&self, to: impl AsRef<Self>) -> io::Result<Option<&Self>> {
         match self.copy(to) {
-            Ok(bytes_copied) => Ok(Some(bytes_copied)),
+            Ok(this) => Ok(Some(this)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 if !self.try_exists()? {
                     Ok(None)
@@ -426,14 +438,16 @@ impl PathExt for Path {
     }
 
     #[inline]
-    fn rename(&self, to: impl AsRef<Self>) -> io::Result<()> {
-        fs::rename(self, to)
+    fn rename(&self, to: impl AsRef<Self>) -> io::Result<&Self> {
+        fs::rename(self, to)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn rename_if_exists(&self, to: impl AsRef<Self>) -> io::Result<Option<()>> {
+    fn rename_if_exists(&self, to: impl AsRef<Self>) -> io::Result<Option<&Self>> {
         match self.rename(to) {
-            Ok(()) => Ok(Some(())),
+            Ok(this) => Ok(Some(this)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 if !self.try_exists_nofollow()? {
                     Ok(None)
@@ -446,126 +460,150 @@ impl PathExt for Path {
     }
 
     #[inline]
-    fn remove_file(&self) -> io::Result<()> {
-        fs::remove_file(self)
+    fn remove_file(&self) -> io::Result<&Self> {
+        fs::remove_file(self)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn remove_file_if_exists(&self) -> io::Result<Option<()>> {
+    fn remove_file_if_exists(&self) -> io::Result<Option<&Self>> {
         match self.remove_file() {
-            Ok(()) => Ok(Some(())),
+            Ok(this) => Ok(Some(this)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
     }
 
     #[inline]
-    fn remove_dir(&self) -> io::Result<()> {
-        fs::remove_dir(self)
+    fn remove_dir(&self) -> io::Result<&Self> {
+        fs::remove_dir(self)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn remove_dir_if_exists(&self) -> io::Result<Option<()>> {
+    fn remove_dir_if_exists(&self) -> io::Result<Option<&Self>> {
         match self.remove_dir() {
-            Ok(()) => Ok(Some(())),
+            Ok(this) => Ok(Some(this)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
     }
 
     #[inline]
-    fn remove_dir_all(&self) -> io::Result<()> {
-        fs::remove_dir_all(self)
+    fn remove_dir_all(&self) -> io::Result<&Self> {
+        fs::remove_dir_all(self)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn remove_dir_all_if_exists(&self) -> io::Result<Option<()>> {
+    fn remove_dir_all_if_exists(&self) -> io::Result<Option<&Self>> {
         match self.remove_dir_all() {
-            Ok(()) => Ok(Some(())),
+            Ok(this) => Ok(Some(this)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
     }
 
     #[inline]
-    fn hard_link(&self, link: impl AsRef<Self>) -> io::Result<()> {
-        fs::hard_link(self, link)
+    fn hard_link(&self, link: impl AsRef<Self>) -> io::Result<&Self> {
+        fs::hard_link(self, link)?;
+
+        Ok(self)
     }
 
     #[inline]
-    fn hard_link_atomic(&self, link: impl AsRef<Self>) -> io::Result<()> {
+    fn hard_link_atomic(&self, link: impl AsRef<Self>) -> io::Result<&Self> {
         let temp = TempPath::try_from_path(link.as_ref())?;
 
         self.hard_link(temp.path())?;
 
-        temp.persist(link)
+        temp.persist(link)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn symlink(&self, link: impl AsRef<Self>) -> io::Result<()> {
-        unix::fs::symlink(self, link)
+    fn symlink(&self, link: impl AsRef<Self>) -> io::Result<&Self> {
+        unix::fs::symlink(self, link)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn symlink_atomic(&self, link: impl AsRef<Self>) -> io::Result<()> {
+    fn symlink_atomic(&self, link: impl AsRef<Self>) -> io::Result<&Self> {
         let temp = TempPath::try_from_path(link.as_ref())?;
 
         self.symlink(temp.path())?;
 
-        temp.persist(link)
+        temp.persist(link)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn symlink_absolute(&self, link: impl AsRef<Self>) -> io::Result<()> {
+    fn symlink_absolute(&self, link: impl AsRef<Self>) -> io::Result<&Self> {
         #[expect(unstable_name_collisions)]
         let absolute = self.absolute()?;
 
-        absolute.symlink(link)
+        absolute.symlink(link)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn symlink_absolute_atomic(&self, link: impl AsRef<Self>) -> io::Result<()> {
+    fn symlink_absolute_atomic(&self, link: impl AsRef<Self>) -> io::Result<&Self> {
         #[expect(unstable_name_collisions)]
         let absolute = self.absolute()?;
 
-        absolute.symlink_atomic(link)
+        absolute.symlink_atomic(link)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn symlink_relative(&self, link: impl AsRef<Self>) -> io::Result<()> {
+    fn symlink_relative(&self, link: impl AsRef<Self>) -> io::Result<&Self> {
         let base = link.as_ref().base()?;
 
         let relative = diff_paths(self, base)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Failed to diff paths"))?;
 
-        relative.symlink(link)
+        relative.symlink(link)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn symlink_relative_atomic(&self, link: impl AsRef<Self>) -> io::Result<()> {
+    fn symlink_relative_atomic(&self, link: impl AsRef<Self>) -> io::Result<&Self> {
         let base = link.as_ref().base()?;
 
         let relative = diff_paths(self, base)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Failed to diff paths"))?;
 
-        relative.symlink_atomic(link)
+        relative.symlink_atomic(link)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn set_permissions(&self, permissions: Permissions) -> io::Result<()> {
-        fs::set_permissions(self, permissions)
+    fn set_permissions(&self, permissions: Permissions) -> io::Result<&Self> {
+        fs::set_permissions(self, permissions)?;
+
+        Ok(self)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<()> {
+    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
         let metadata = fs::metadata(self)?;
 
         let mut permissions = metadata.permissions();
@@ -577,7 +615,7 @@ impl PathExt for Path {
 
     #[cfg(unix)]
     #[inline]
-    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<()> {
+    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
         let metadata = fs::metadata(self)?;
 
         let mut permissions = metadata.permissions();
@@ -589,7 +627,7 @@ impl PathExt for Path {
 
     #[cfg(unix)]
     #[inline]
-    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<()> {
+    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
         let metadata = fs::metadata(self)?;
 
         let mut permissions = metadata.permissions();
