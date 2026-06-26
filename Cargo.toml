@@ -11,6 +11,7 @@ categories = ["rust-patterns"]
 [dependencies]
 pathdiff = "0.2.3"
 tokio = { version = "1.52.3", features = ["fs", "io-util"], optional = true }
+trait-variant = { version = "0.1.2", optional = true }
 
 [features]
-tokio = ["dep:tokio"]
+tokio = ["dep:tokio", "dep:trait-variant"]

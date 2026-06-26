@@ -4,17 +4,17 @@ use std::{io, path::Path};
 
 use tokio::fs::{File, OpenOptions};
 
-#[expect(async_fn_in_trait)]
+#[trait_variant::make(Send)]
 pub trait FileExt {
-    async fn open_if_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>>
+    async fn open_if_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
-    async fn create_if_not_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>>
+    async fn create_if_not_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
-    async fn create_new_if_not_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>>
+    async fn create_new_if_not_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
@@ -28,7 +28,7 @@ pub trait FileExt {
 
 impl FileExt for File {
     #[inline]
-    async fn open_if_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
+    async fn open_if_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>> {
         match Self::open(path).await {
             Ok(file) => Ok(Some(file)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -37,7 +37,7 @@ impl FileExt for File {
     }
 
     #[inline]
-    async fn create_if_not_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
+    async fn create_if_not_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>> {
         let mut options = Self::options();
 
         options.write(true).create_new(true);
@@ -46,7 +46,7 @@ impl FileExt for File {
     }
 
     #[inline]
-    async fn create_new_if_not_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
+    async fn create_new_if_not_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>> {
         match Self::create_new(path).await {
             Ok(file) => Ok(Some(file)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
@@ -91,16 +91,16 @@ impl FileExt for File {
     }
 }
 
-#[expect(async_fn_in_trait)]
+#[trait_variant::make(Send)]
 pub trait OpenOptionsExt {
-    async fn open_if_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>>;
+    async fn open_if_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>>;
 
-    async fn open_if_not_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>>;
+    async fn open_if_not_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>>;
 }
 
 impl OpenOptionsExt for OpenOptions {
     #[inline]
-    async fn open_if_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>> {
+    async fn open_if_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>> {
         match self.open(path).await {
             Ok(file) => Ok(Some(file)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -109,7 +109,7 @@ impl OpenOptionsExt for OpenOptions {
     }
 
     #[inline]
-    async fn open_if_not_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>> {
+    async fn open_if_not_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>> {
         match self.open(path).await {
             Ok(file) => Ok(Some(file)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),

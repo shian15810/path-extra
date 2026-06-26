@@ -31,7 +31,7 @@ impl TempPath {
         &self.path
     }
 
-    pub(super) async fn persist(mut self, to: impl AsRef<Path>) -> io::Result<()> {
+    pub(super) async fn persist(mut self, to: impl AsRef<Path> + Send) -> io::Result<()> {
         self.path.rename(to).await?;
 
         mem::take(&mut self.path);
