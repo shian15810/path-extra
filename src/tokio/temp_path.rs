@@ -32,7 +32,9 @@ impl TempPath {
     }
 
     pub(super) async fn persist(mut self, to: impl AsRef<Path> + Send) -> io::Result<()> {
-        self.path.rename(to).await?;
+        let path = &self.path;
+
+        path.rename(to).await?;
 
         mem::take(&mut self.path);
 
@@ -48,8 +50,10 @@ mod drop {
 
     impl Drop for TempPath {
         fn drop(&mut self) {
-            if self.path.remove_file().is_err() {
-                let _ = self.path.remove_dir_all();
+            let path = &self.path;
+
+            if path.remove_file().is_err() {
+                let _ = path.remove_dir_all();
             }
         }
     }
