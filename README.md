@@ -39,10 +39,10 @@ config_dir.create_dir_all()?
 ## Installation
 
 ```shell
-# Support std by default
+# Supports std by default
 cargo add path-extra
 
-# Enable Tokio support
+# To enable Tokio support
 cargo add path-extra --features=tokio
 ```
 
@@ -50,7 +50,7 @@ cargo add path-extra --features=tokio
 
 ### Method chaining
 
-Operations on the same `Path` compose elegantly into a single expression.
+Operations on the same `Path` compose elegantly into a single expression:
 
 ```rust
 let metadata = config_file.metadata()?;
@@ -64,7 +64,7 @@ config_file.with_extension("tmp")
 
 ### Graceful `NotFound` / `AlreadyExists`
 
-Use ergonomic `_if_exists` / `_if_not_exists` variants to deal with `Ok(None)` instead.
+Use ergonomic `_if_exists` / `_if_not_exists` variants to deal with `Ok(None)` instead:
 
 ```rust
 // Before: Tedious and easy to get wrong
@@ -86,7 +86,7 @@ config_dir
     .create_dir_all()?
     .join("config.toml")
     .write_new_if_not_exists(DEFAULT_CONFIG)?
-    .set_permissions_mode(0o644)?;
+    .set_permissions(permissions)?;
 ```
 
 ### Symlink flavors
@@ -109,7 +109,7 @@ target.hard_link_atomic(&link)?;
 
 ### Symlink-aware checks
 
-Both `.exists()` and `.try_exists()` don't work with broken symlinks.
+Both `.exists()` and `.try_exists()` don't work with broken symlinks:
 
 ```rust
 // Before: Broken symlink
@@ -121,7 +121,7 @@ broken.exists_nofollow()      // true
 broken.try_exists_nofollow()? // true
 ```
 
-The following `_nofollow` variants are also provided for convenience.
+The following `_nofollow` variants are also provided for convenience:
 
 ```rust
 // Infallible — Return false on error like .exists()
@@ -135,7 +135,7 @@ path.try_is_file_nofollow()
 path.try_is_dir_nofollow()
 ```
 
-### Tokio support
+## Tokio
 
 The standard `Path` only has sync methods, using the wrong ones will block your async runtime.
 
