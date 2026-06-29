@@ -1,17 +1,23 @@
 [package]
 name = "path-extra"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
+rust-version = "1.91"
 description = "Extra methods on `Path` for ergonomic and chainable `fs` operations."
 repository = "https://github.com/shian15810/path-extra"
 license = "MIT OR Apache-2.0"
-keywords = ["ext", "file", "fs", "path", "trait"]
-categories = ["rust-patterns"]
+keywords = ["ext", "file", "fs", "path", "tokio"]
+categories = ["asynchronous", "filesystem", "rust-patterns"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
-pathdiff = "0.2.3"
 tokio = { version = "1.52.3", features = ["fs", "io-util"], optional = true }
 trait-variant = { version = "0.1.2", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+pathdiff = "0.2.3"
 
 [features]
 tokio = ["dep:tokio", "dep:trait-variant"]
