@@ -13,7 +13,11 @@ categories = ["asynchronous", "filesystem", "rust-patterns"]
 all-features = true
 
 [dependencies]
-tokio = { version = "1.52.3", features = ["fs", "io-util"], optional = true }
+tokio = {
+  version = "1.52.3",
+  features = ["fs", "io-util", "rt"],
+  optional = true,
+}
 trait-variant = { version = "0.1.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]

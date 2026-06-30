@@ -1,5 +1,5 @@
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::{self, fs::PermissionsExt as _};
 use std::{
     fs::{File, OpenOptions, Permissions},
     io,
@@ -29,6 +29,9 @@ pub trait FileExt {
     fn add_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
     fn remove_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
+
+    #[cfg(unix)]
+    fn chown(&self, uid: Option<u32>, gid: Option<u32>) -> io::Result<&Self>;
 }
 
 impl FileExt for File {
@@ -103,6 +106,14 @@ impl FileExt for File {
         let perm = meta.permissions();
 
         self.with_permissions_mode(perm.mode() & !mode)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn chown(&self, uid: Option<u32>, gid: Option<u32>) -> io::Result<&Self> {
+        unix::fs::fchown(self, uid, gid)?;
+
+        Ok(self)
     }
 }
 

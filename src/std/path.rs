@@ -4,14 +4,14 @@ use std::{
     borrow::Cow,
     ffi::OsStr,
     fs::{self, File, Metadata, Permissions, ReadDir},
-    io::{self, Write},
+    io::{self, BufRead as _, BufReader, Lines, Write as _},
     path::{self, Path, PathBuf},
 };
 
 #[cfg(unix)]
 use pathdiff::diff_paths;
 
-use super::{fs::FileExt, temp_path::TempPath};
+use super::{fs::FileExt as _, temp_path::TempPath};
 
 pub trait PathExt {
     fn base(&self) -> io::Result<&Path>;
@@ -64,6 +64,9 @@ pub trait PathExt {
 
     fn read_to_string(&self) -> io::Result<String>;
     fn read_to_string_if_exists(&self) -> io::Result<Option<String>>;
+
+    fn read_lines(&self) -> io::Result<Lines<BufReader<File>>>;
+    fn read_lines_if_exists(&self) -> io::Result<Option<Lines<BufReader<File>>>>;
 
     fn create_dir_all(self) -> io::Result<Self>
     where
@@ -208,6 +211,37 @@ pub trait PathExt {
         Self: Sized;
     #[cfg(unix)]
     fn remove_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
+
+    #[cfg(unix)]
+    fn chown(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Self>
+    where
+        Self: Sized;
+    #[cfg(unix)]
+    fn chown_if_exists(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
+
+    #[cfg(unix)]
+    fn chown_nofollow(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Self>
+    where
+        Self: Sized;
+    #[cfg(unix)]
+    fn chown_nofollow_if_exists(
+        self,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    fn chroot(self) -> io::Result<Self>
+    where
+        Self: Sized;
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    fn chroot_if_exists(self) -> io::Result<Option<Self>>
     where
         Self: Sized;
 }
@@ -458,6 +492,26 @@ impl<T: AsRef<Path>> PathExt for T {
     fn read_to_string_if_exists(&self) -> io::Result<Option<String>> {
         match self.read_to_string() {
             Ok(string) => Ok(Some(string)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[inline]
+    fn read_lines(&self) -> io::Result<Lines<BufReader<File>>> {
+        let file = self.open()?;
+
+        let buf_reader = BufReader::new(file);
+
+        let lines = buf_reader.lines();
+
+        Ok(lines)
+    }
+
+    #[inline]
+    fn read_lines_if_exists(&self) -> io::Result<Option<Lines<BufReader<File>>>> {
+        match self.read_lines() {
+            Ok(lines) => Ok(Some(lines)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
@@ -863,6 +917,64 @@ impl<T: AsRef<Path>> PathExt for T {
             Err(err) => Err(err),
         }
     }
+
+    #[cfg(unix)]
+    #[inline]
+    fn chown(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Self> {
+        unix::fs::chown(self.as_ref(), uid, gid)?;
+
+        Ok(self)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn chown_if_exists(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<Self>> {
+        match self.as_ref().chown(uid, gid) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn chown_nofollow(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Self> {
+        unix::fs::lchown(self.as_ref(), uid, gid)?;
+
+        Ok(self)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn chown_nofollow_if_exists(
+        self,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> io::Result<Option<Self>> {
+        match self.as_ref().chown_nofollow(uid, gid) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    #[inline]
+    fn chroot(self) -> io::Result<Self> {
+        unix::fs::chroot(self.as_ref())?;
+
+        Ok(self)
+    }
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    #[inline]
+    fn chroot_if_exists(self) -> io::Result<Option<Self>> {
+        match self.as_ref().chroot() {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
 }
 
 macro_rules! define_option_path_ext {
@@ -923,6 +1035,8 @@ define_option_path_ext! {
 
     fn read_to_string(self) -> io::Result<Option<String>>;
 
+    fn read_lines(self) -> io::Result<Option<Lines<BufReader<File>>>>;
+
     fn create_dir_all(self) -> io::Result<Option<T>>;
 
     fn create_dir(self) -> io::Result<Option<T>>;
@@ -971,4 +1085,13 @@ define_option_path_ext! {
     fn add_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
     #[cfg(unix)]
     fn remove_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
+
+    #[cfg(unix)]
+    fn chown(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<T>>;
+
+    #[cfg(unix)]
+    fn chown_nofollow(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<T>>;
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    fn chroot(self) -> io::Result<Option<T>>;
 }

@@ -1,5 +1,5 @@
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::{self, fs::PermissionsExt as _};
 use std::{
     borrow::Cow,
     ffi::OsStr,
@@ -10,12 +10,14 @@ use std::{
 
 #[cfg(unix)]
 use pathdiff::diff_paths;
+#[cfg(unix)]
+use tokio::task;
 use tokio::{
     fs::{self, File, ReadDir},
-    io::AsyncWriteExt,
+    io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines},
 };
 
-use super::{fs::FileExt, temp_path::TempPath};
+use super::{fs::FileExt as _, temp_path::TempPath};
 
 #[trait_variant::make(Send)]
 pub trait PathExt {
@@ -74,6 +76,9 @@ pub trait PathExt {
 
     async fn read_to_string(&self) -> io::Result<String>;
     async fn read_to_string_if_exists(&self) -> io::Result<Option<String>>;
+
+    async fn read_lines(&self) -> io::Result<Lines<BufReader<File>>>;
+    async fn read_lines_if_exists(&self) -> io::Result<Option<Lines<BufReader<File>>>>;
 
     async fn create_dir_all(self) -> io::Result<Self>
     where
@@ -227,6 +232,37 @@ pub trait PathExt {
         Self: Sized;
     #[cfg(unix)]
     async fn remove_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
+
+    #[cfg(unix)]
+    async fn chown(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Self>
+    where
+        Self: Sized;
+    #[cfg(unix)]
+    async fn chown_if_exists(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
+
+    #[cfg(unix)]
+    async fn chown_nofollow(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Self>
+    where
+        Self: Sized;
+    #[cfg(unix)]
+    async fn chown_nofollow_if_exists(
+        self,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    async fn chroot(self) -> io::Result<Self>
+    where
+        Self: Sized;
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    async fn chroot_if_exists(self) -> io::Result<Option<Self>>
     where
         Self: Sized;
 }
@@ -514,6 +550,26 @@ impl<T: AsRef<Path> + Send + Sync> PathExt for T {
     async fn read_to_string_if_exists(&self) -> io::Result<Option<String>> {
         match self.read_to_string().await {
             Ok(string) => Ok(Some(string)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[inline]
+    async fn read_lines(&self) -> io::Result<Lines<BufReader<File>>> {
+        let file = self.open().await?;
+
+        let buf_reader = BufReader::new(file);
+
+        let lines = buf_reader.lines();
+
+        Ok(lines)
+    }
+
+    #[inline]
+    async fn read_lines_if_exists(&self) -> io::Result<Option<Lines<BufReader<File>>>> {
+        match self.read_lines().await {
+            Ok(lines) => Ok(Some(lines)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
@@ -928,6 +984,70 @@ impl<T: AsRef<Path> + Send + Sync> PathExt for T {
             Err(err) => Err(err),
         }
     }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn chown(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Self> {
+        let this = self.as_ref().to_owned();
+
+        task::spawn_blocking(move || unix::fs::chown(this, uid, gid)).await??;
+
+        Ok(self)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn chown_if_exists(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<Self>> {
+        match self.as_ref().chown(uid, gid).await {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn chown_nofollow(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Self> {
+        let this = self.as_ref().to_owned();
+
+        task::spawn_blocking(move || unix::fs::lchown(this, uid, gid)).await??;
+
+        Ok(self)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn chown_nofollow_if_exists(
+        self,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> io::Result<Option<Self>> {
+        match self.as_ref().chown_nofollow(uid, gid).await {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    #[inline]
+    async fn chroot(self) -> io::Result<Self> {
+        let this = self.as_ref().to_owned();
+
+        task::spawn_blocking(|| unix::fs::chroot(this)).await??;
+
+        Ok(self)
+    }
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    #[inline]
+    async fn chroot_if_exists(self) -> io::Result<Option<Self>> {
+        match self.as_ref().chroot().await {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
 }
 
 macro_rules! define_option_path_ext {
@@ -989,6 +1109,8 @@ define_option_path_ext! {
 
     async fn read_to_string(self) -> io::Result<Option<String>>;
 
+    async fn read_lines(self) -> io::Result<Option<Lines<BufReader<File>>>>;
+
     async fn create_dir_all(self) -> io::Result<Option<T>>;
 
     async fn create_dir(self) -> io::Result<Option<T>>;
@@ -1040,6 +1162,15 @@ define_option_path_ext! {
     async fn add_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
     #[cfg(unix)]
     async fn remove_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
+
+    #[cfg(unix)]
+    async fn chown(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<T>>;
+
+    #[cfg(unix)]
+    async fn chown_nofollow(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<T>>;
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    async fn chroot(self) -> io::Result<Option<T>>;
 }
 
 macro_rules! define_async_path_ext {
@@ -1111,6 +1242,9 @@ define_async_path_ext! {
 
     async fn read_to_string(self) -> io::Result<String>;
     async fn read_to_string_if_exists(self) -> io::Result<Option<String>>;
+
+    async fn read_lines(self) -> io::Result<Lines<BufReader<File>>>;
+    async fn read_lines_if_exists(self) -> io::Result<Option<Lines<BufReader<File>>>>;
 
     async fn create_dir_all(self) -> io::Result<T>;
 
@@ -1185,6 +1319,25 @@ define_async_path_ext! {
     async fn remove_permissions_mode(self, mode: u32) -> io::Result<T>;
     #[cfg(unix)]
     async fn remove_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<T>>;
+
+    #[cfg(unix)]
+    async fn chown(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<T>;
+    #[cfg(unix)]
+    async fn chown_if_exists(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<T>>;
+
+    #[cfg(unix)]
+    async fn chown_nofollow(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<T>;
+    #[cfg(unix)]
+    async fn chown_nofollow_if_exists(
+        self,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> io::Result<Option<T>>;
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    async fn chroot(self) -> io::Result<T>;
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    async fn chroot_if_exists(self) -> io::Result<Option<T>>;
 }
 
 macro_rules! define_async_option_path_ext {
@@ -1252,6 +1405,8 @@ define_async_option_path_ext! {
 
     async fn read_to_string(self) -> io::Result<Option<String>>;
 
+    async fn read_lines(self) -> io::Result<Option<Lines<BufReader<File>>>>;
+
     async fn create_dir_all(self) -> io::Result<Option<T>>;
 
     async fn create_dir(self) -> io::Result<Option<T>>;
@@ -1303,4 +1458,13 @@ define_async_option_path_ext! {
     async fn add_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
     #[cfg(unix)]
     async fn remove_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
+
+    #[cfg(unix)]
+    async fn chown(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<T>>;
+
+    #[cfg(unix)]
+    async fn chown_nofollow(self, uid: Option<u32>, gid: Option<u32>) -> io::Result<Option<T>>;
+
+    #[cfg(all(unix, not(target_os = "fuchsia")))]
+    async fn chroot(self) -> io::Result<Option<T>>;
 }

@@ -1,8 +1,10 @@
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::{self, fs::PermissionsExt as _};
 use std::{fs::Permissions, io, path::Path};
 
 use tokio::fs::{File, OpenOptions};
+#[cfg(unix)]
+use tokio::task;
 
 #[trait_variant::make(Send)]
 pub trait FileExt {
@@ -28,6 +30,9 @@ pub trait FileExt {
     async fn add_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
     async fn remove_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
+
+    #[cfg(unix)]
+    async fn chown(&self, uid: Option<u32>, gid: Option<u32>) -> io::Result<&Self>;
 }
 
 impl FileExt for File {
@@ -102,6 +107,16 @@ impl FileExt for File {
         let perm = meta.permissions();
 
         self.with_permissions_mode(perm.mode() & !mode).await
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn chown(&self, uid: Option<u32>, gid: Option<u32>) -> io::Result<&Self> {
+        let this = self.try_clone().await?;
+
+        task::spawn_blocking(move || unix::fs::fchown(this, uid, gid)).await??;
+
+        Ok(self)
     }
 }
 
