@@ -1,20 +1,17 @@
+#[cfg(unix)]
+use std::os::unix::{self, fs::PermissionsExt as _};
 use std::{
     borrow::Cow,
     ffi::OsStr,
-    fs::{self, File, Metadata, ReadDir},
+    fs::{self, File, Metadata, Permissions, ReadDir},
     io::{self, Write},
     path::{self, Path, PathBuf},
-};
-#[cfg(unix)]
-use std::{
-    fs::Permissions,
-    os::unix::{self, fs::PermissionsExt as _},
 };
 
 #[cfg(unix)]
 use pathdiff::diff_paths;
 
-use super::temp_path::TempPath;
+use super::{fs::FileExt, temp_path::TempPath};
 
 pub trait PathExt {
     fn base(&self) -> io::Result<&Path>;
@@ -52,6 +49,15 @@ pub trait PathExt {
 
     fn try_is_read_dir_empty(&self) -> io::Result<bool>;
     fn try_is_read_dir_empty_if_exists(&self) -> io::Result<Option<bool>>;
+
+    fn create_new(&self) -> io::Result<File>;
+    fn create_new_if_not_exists(&self) -> io::Result<Option<File>>;
+
+    fn create(&self) -> io::Result<File>;
+    fn create_if_not_exists(&self) -> io::Result<Option<File>>;
+
+    fn open(&self) -> io::Result<File>;
+    fn open_if_exists(&self) -> io::Result<Option<File>>;
 
     fn read(&self) -> io::Result<Vec<u8>>;
     fn read_if_exists(&self) -> io::Result<Option<Vec<u8>>>;
@@ -129,7 +135,13 @@ pub trait PathExt {
     fn hard_link(self, link: impl AsRef<Path>) -> io::Result<Self>
     where
         Self: Sized;
+    fn hard_link_if_exists(self, link: impl AsRef<Path>) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
     fn hard_link_atomic(self, link: impl AsRef<Path>) -> io::Result<Self>
+    where
+        Self: Sized;
+    fn hard_link_atomic_if_exists(self, link: impl AsRef<Path>) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
@@ -160,21 +172,42 @@ pub trait PathExt {
     where
         Self: Sized;
 
-    #[cfg(unix)]
-    fn set_permissions(self, permissions: Permissions) -> io::Result<Self>
+    fn set_permissions(self, perm: Permissions) -> io::Result<Self>
+    where
+        Self: Sized;
+    fn set_permissions_if_exists(self, perm: Permissions) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
+
+    fn set_permissions_readonly(self, readonly: bool) -> io::Result<Self>
+    where
+        Self: Sized;
+    fn set_permissions_readonly_if_exists(self, readonly: bool) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
     #[cfg(unix)]
-    fn set_permissions_mode(self, permissions_mode: u32) -> io::Result<Self>
+    fn set_permissions_mode(self, mode: u32) -> io::Result<Self>
     where
         Self: Sized;
     #[cfg(unix)]
-    fn add_permissions_mode(self, permissions_mode: u32) -> io::Result<Self>
+    fn set_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<Self>>
     where
         Self: Sized;
     #[cfg(unix)]
-    fn remove_permissions_mode(self, permissions_mode: u32) -> io::Result<Self>
+    fn add_permissions_mode(self, mode: u32) -> io::Result<Self>
+    where
+        Self: Sized;
+    #[cfg(unix)]
+    fn add_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<Self>>
+    where
+        Self: Sized;
+    #[cfg(unix)]
+    fn remove_permissions_mode(self, mode: u32) -> io::Result<Self>
+    where
+        Self: Sized;
+    #[cfg(unix)]
+    fn remove_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<Self>>
     where
         Self: Sized;
 }
@@ -255,35 +288,26 @@ impl<T: AsRef<Path>> PathExt for T {
 
     #[inline]
     fn try_is_file(&self) -> io::Result<bool> {
-        self.metadata_if_exists().map(|metadata_opt| {
-            metadata_opt
-                .map(|metadata| metadata.is_file())
-                .unwrap_or(false)
-        })
+        self.metadata_if_exists()
+            .map(|meta_opt| meta_opt.map(|meta| meta.is_file()).unwrap_or(false))
     }
 
     #[inline]
     fn try_is_dir(&self) -> io::Result<bool> {
-        self.metadata_if_exists().map(|metadata_opt| {
-            metadata_opt
-                .map(|metadata| metadata.is_dir())
-                .unwrap_or(false)
-        })
+        self.metadata_if_exists()
+            .map(|meta_opt| meta_opt.map(|meta| meta.is_dir()).unwrap_or(false))
     }
 
     #[inline]
     fn try_is_symlink(&self) -> io::Result<bool> {
-        self.symlink_metadata_if_exists().map(|metadata_opt| {
-            metadata_opt
-                .map(|metadata| metadata.is_symlink())
-                .unwrap_or(false)
-        })
+        self.symlink_metadata_if_exists()
+            .map(|meta_opt| meta_opt.map(|meta| meta.is_symlink()).unwrap_or(false))
     }
 
     #[inline]
     fn metadata_if_exists(&self) -> io::Result<Option<Metadata>> {
         match self.metadata() {
-            Ok(metadata) => Ok(Some(metadata)),
+            Ok(meta) => Ok(Some(meta)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
@@ -292,7 +316,7 @@ impl<T: AsRef<Path>> PathExt for T {
     #[inline]
     fn symlink_metadata_if_exists(&self) -> io::Result<Option<Metadata>> {
         match self.symlink_metadata() {
-            Ok(metadata) => Ok(Some(metadata)),
+            Ok(meta) => Ok(Some(meta)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
@@ -333,39 +357,33 @@ impl<T: AsRef<Path>> PathExt for T {
     #[inline]
     fn is_file_nofollow(&self) -> bool {
         self.symlink_metadata()
-            .map(|metadata| metadata.is_file())
+            .map(|meta| meta.is_file())
             .unwrap_or(false)
     }
 
     #[inline]
     fn is_dir_nofollow(&self) -> bool {
         self.symlink_metadata()
-            .map(|metadata| metadata.is_dir())
+            .map(|meta| meta.is_dir())
             .unwrap_or(false)
     }
 
     #[inline]
     fn try_exists_nofollow(&self) -> io::Result<bool> {
         self.symlink_metadata_if_exists()
-            .map(|metadata_opt| metadata_opt.is_some())
+            .map(|meta_opt| meta_opt.is_some())
     }
 
     #[inline]
     fn try_is_file_nofollow(&self) -> io::Result<bool> {
-        self.symlink_metadata_if_exists().map(|metadata_opt| {
-            metadata_opt
-                .map(|metadata| metadata.is_file())
-                .unwrap_or(false)
-        })
+        self.symlink_metadata_if_exists()
+            .map(|meta_opt| meta_opt.map(|meta| meta.is_file()).unwrap_or(false))
     }
 
     #[inline]
     fn try_is_dir_nofollow(&self) -> io::Result<bool> {
-        self.symlink_metadata_if_exists().map(|metadata_opt| {
-            metadata_opt
-                .map(|metadata| metadata.is_dir())
-                .unwrap_or(false)
-        })
+        self.symlink_metadata_if_exists()
+            .map(|meta_opt| meta_opt.map(|meta| meta.is_dir()).unwrap_or(false))
     }
 
     #[inline]
@@ -385,6 +403,36 @@ impl<T: AsRef<Path>> PathExt for T {
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
+    }
+
+    #[inline]
+    fn create_new(&self) -> io::Result<File> {
+        File::create_new(self)
+    }
+
+    #[inline]
+    fn create_new_if_not_exists(&self) -> io::Result<Option<File>> {
+        File::create_new_if_not_exists(self)
+    }
+
+    #[inline]
+    fn create(&self) -> io::Result<File> {
+        File::create(self)
+    }
+
+    #[inline]
+    fn create_if_not_exists(&self) -> io::Result<Option<File>> {
+        File::create_if_not_exists(self)
+    }
+
+    #[inline]
+    fn open(&self) -> io::Result<File> {
+        File::open(self)
+    }
+
+    #[inline]
+    fn open_if_exists(&self) -> io::Result<Option<File>> {
+        File::open_if_exists(self)
     }
 
     #[inline]
@@ -614,6 +662,21 @@ impl<T: AsRef<Path>> PathExt for T {
     }
 
     #[inline]
+    fn hard_link_if_exists(self, link: impl AsRef<Path>) -> io::Result<Option<Self>> {
+        match self.as_ref().hard_link(link) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                if !self.try_exists_nofollow()? {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
+            },
+            Err(err) => Err(err),
+        }
+    }
+
+    #[inline]
     fn hard_link_atomic(self, link: impl AsRef<Path>) -> io::Result<Self> {
         let temp = TempPath::try_from_path(link.as_ref())?;
 
@@ -622,6 +685,21 @@ impl<T: AsRef<Path>> PathExt for T {
         temp.persist(link)?;
 
         Ok(self)
+    }
+
+    #[inline]
+    fn hard_link_atomic_if_exists(self, link: impl AsRef<Path>) -> io::Result<Option<Self>> {
+        match self.as_ref().hard_link_atomic(link) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                if !self.try_exists_nofollow()? {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
+            },
+            Err(err) => Err(err),
+        }
     }
 
     #[cfg(unix)]
@@ -692,48 +770,98 @@ impl<T: AsRef<Path>> PathExt for T {
         Ok(self)
     }
 
-    #[cfg(unix)]
     #[inline]
-    fn set_permissions(self, permissions: Permissions) -> io::Result<Self> {
-        fs::set_permissions(self.as_ref(), permissions)?;
+    fn set_permissions(self, perm: Permissions) -> io::Result<Self> {
+        fs::set_permissions(self.as_ref(), perm)?;
 
         Ok(self)
     }
 
-    #[cfg(unix)]
     #[inline]
-    fn set_permissions_mode(self, permissions_mode: u32) -> io::Result<Self> {
-        let metadata = self.metadata()?;
+    fn set_permissions_if_exists(self, perm: Permissions) -> io::Result<Option<Self>> {
+        match self.as_ref().set_permissions(perm) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
 
-        let mut permissions = metadata.permissions();
+    #[inline]
+    fn set_permissions_readonly(self, readonly: bool) -> io::Result<Self> {
+        let meta = self.metadata()?;
 
-        permissions.set_mode(permissions_mode);
+        let mut perm = meta.permissions();
 
-        self.set_permissions(permissions)
+        perm.set_readonly(readonly);
+
+        self.set_permissions(perm)
+    }
+
+    #[inline]
+    fn set_permissions_readonly_if_exists(self, readonly: bool) -> io::Result<Option<Self>> {
+        match self.as_ref().set_permissions_readonly(readonly) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
     }
 
     #[cfg(unix)]
     #[inline]
-    fn add_permissions_mode(self, permissions_mode: u32) -> io::Result<Self> {
-        let metadata = self.metadata()?;
+    fn set_permissions_mode(self, mode: u32) -> io::Result<Self> {
+        let perm = Permissions::from_mode(mode);
 
-        let mut permissions = metadata.permissions();
-
-        permissions.set_mode(permissions.mode() | permissions_mode);
-
-        self.set_permissions(permissions)
+        self.set_permissions(perm)
     }
 
     #[cfg(unix)]
     #[inline]
-    fn remove_permissions_mode(self, permissions_mode: u32) -> io::Result<Self> {
-        let metadata = self.metadata()?;
+    fn set_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<Self>> {
+        match self.as_ref().set_permissions_mode(mode) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
 
-        let mut permissions = metadata.permissions();
+    #[cfg(unix)]
+    #[inline]
+    fn add_permissions_mode(self, mode: u32) -> io::Result<Self> {
+        let meta = self.metadata()?;
 
-        permissions.set_mode(permissions.mode() & !permissions_mode);
+        let perm = meta.permissions();
 
-        self.set_permissions(permissions)
+        self.set_permissions_mode(perm.mode() | mode)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn add_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<Self>> {
+        match self.as_ref().add_permissions_mode(mode) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn remove_permissions_mode(self, mode: u32) -> io::Result<Self> {
+        let meta = self.metadata()?;
+
+        let perm = meta.permissions();
+
+        self.set_permissions_mode(perm.mode() & !mode)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn remove_permissions_mode_if_exists(self, mode: u32) -> io::Result<Option<Self>> {
+        match self.as_ref().remove_permissions_mode(mode) {
+            Ok(_) => Ok(Some(self)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
     }
 }
 
@@ -785,6 +913,12 @@ define_option_path_ext! {
 
     fn try_is_read_dir_empty(self) -> io::Result<Option<bool>>;
 
+    fn create_new(self) -> io::Result<Option<File>>;
+
+    fn create(self) -> io::Result<Option<File>>;
+
+    fn open(self) -> io::Result<Option<File>>;
+
     fn read(self) -> io::Result<Option<Vec<u8>>>;
 
     fn read_to_string(self) -> io::Result<Option<String>>;
@@ -827,13 +961,14 @@ define_option_path_ext! {
     #[cfg(unix)]
     fn symlink_relative_atomic(self, link: impl AsRef<Path>) -> io::Result<Option<T>>;
 
-    #[cfg(unix)]
-    fn set_permissions(self, permissions: Permissions) -> io::Result<Option<T>>;
+    fn set_permissions(self, perm: Permissions) -> io::Result<Option<T>>;
+
+    fn set_permissions_readonly(self, readonly: bool) -> io::Result<Option<T>>;
 
     #[cfg(unix)]
-    fn set_permissions_mode(self, permissions_mode: u32) -> io::Result<Option<T>>;
+    fn set_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
     #[cfg(unix)]
-    fn add_permissions_mode(self, permissions_mode: u32) -> io::Result<Option<T>>;
+    fn add_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
     #[cfg(unix)]
-    fn remove_permissions_mode(self, permissions_mode: u32) -> io::Result<Option<T>>;
+    fn remove_permissions_mode(self, mode: u32) -> io::Result<Option<T>>;
 }

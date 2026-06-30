@@ -1,12 +1,12 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt as _;
-use std::{io, path::Path};
+use std::{fs::Permissions, io, path::Path};
 
 use tokio::fs::{File, OpenOptions};
 
 #[trait_variant::make(Send)]
 pub trait FileExt {
-    async fn open_if_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>>
+    async fn create_new_if_not_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
@@ -14,24 +14,28 @@ pub trait FileExt {
     where
         Self: Sized;
 
-    async fn create_new_if_not_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>>
+    async fn open_if_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
+    async fn with_permissions(&self, perm: Permissions) -> io::Result<&Self>;
+
+    async fn with_permissions_readonly(&self, readonly: bool) -> io::Result<&Self>;
+
     #[cfg(unix)]
-    async fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
+    async fn with_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
-    async fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
+    async fn add_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
-    async fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
+    async fn remove_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
 }
 
 impl FileExt for File {
     #[inline]
-    async fn open_if_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>> {
-        match Self::open(path).await {
+    async fn create_new_if_not_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>> {
+        match Self::create_new(path).await {
             Ok(file) => Ok(Some(file)),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
             Err(err) => Err(err),
         }
     }
@@ -46,68 +50,8 @@ impl FileExt for File {
     }
 
     #[inline]
-    async fn create_new_if_not_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>> {
-        match Self::create_new(path).await {
-            Ok(file) => Ok(Some(file)),
-            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
-            Err(err) => Err(err),
-        }
-    }
-
-    #[cfg(unix)]
-    #[inline]
-    async fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
-        let metadata = self.metadata().await?;
-
-        let mut permissions = metadata.permissions();
-
-        permissions.set_mode(permissions_mode);
-
-        self.set_permissions(permissions).await?;
-
-        Ok(self)
-    }
-
-    #[cfg(unix)]
-    #[inline]
-    async fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
-        let metadata = self.metadata().await?;
-
-        let mut permissions = metadata.permissions();
-
-        permissions.set_mode(permissions.mode() | permissions_mode);
-
-        self.set_permissions(permissions).await?;
-
-        Ok(self)
-    }
-
-    #[cfg(unix)]
-    #[inline]
-    async fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
-        let metadata = self.metadata().await?;
-
-        let mut permissions = metadata.permissions();
-
-        permissions.set_mode(permissions.mode() & !permissions_mode);
-
-        self.set_permissions(permissions).await?;
-
-        Ok(self)
-    }
-}
-
-#[trait_variant::make(Send)]
-pub trait OpenOptionsExt {
-    async fn open_if_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>>;
-
-    async fn open_if_not_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>>;
-}
-
-impl OpenOptionsExt for OpenOptions {
-    #[inline]
-    async fn open_if_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>> {
-        match self.open(path).await {
+    async fn open_if_exists(path: impl AsRef<Path> + Send) -> io::Result<Option<Self>> {
+        match Self::open(path).await {
             Ok(file) => Ok(Some(file)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
@@ -115,10 +59,73 @@ impl OpenOptionsExt for OpenOptions {
     }
 
     #[inline]
+    async fn with_permissions(&self, perm: Permissions) -> io::Result<&Self> {
+        self.set_permissions(perm).await?;
+
+        Ok(self)
+    }
+
+    #[inline]
+    async fn with_permissions_readonly(&self, readonly: bool) -> io::Result<&Self> {
+        let meta = self.metadata().await?;
+
+        let mut perm = meta.permissions();
+
+        perm.set_readonly(readonly);
+
+        self.with_permissions(perm).await
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn with_permissions_mode(&self, mode: u32) -> io::Result<&Self> {
+        let perm = Permissions::from_mode(mode);
+
+        self.with_permissions(perm).await
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn add_permissions_mode(&self, mode: u32) -> io::Result<&Self> {
+        let meta = self.metadata().await?;
+
+        let perm = meta.permissions();
+
+        self.with_permissions_mode(perm.mode() | mode).await
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    async fn remove_permissions_mode(&self, mode: u32) -> io::Result<&Self> {
+        let meta = self.metadata().await?;
+
+        let perm = meta.permissions();
+
+        self.with_permissions_mode(perm.mode() & !mode).await
+    }
+}
+
+#[trait_variant::make(Send)]
+pub trait OpenOptionsExt {
+    async fn open_if_not_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>>;
+    async fn open_if_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>>;
+}
+
+impl OpenOptionsExt for OpenOptions {
+    #[inline]
     async fn open_if_not_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>> {
         match self.open(path).await {
             Ok(file) => Ok(Some(file)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[inline]
+    async fn open_if_exists(&self, path: impl AsRef<Path> + Send) -> io::Result<Option<File>> {
+        match self.open(path).await {
+            Ok(file) => Ok(Some(file)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
     }

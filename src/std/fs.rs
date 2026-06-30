@@ -1,13 +1,13 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt as _;
 use std::{
-    fs::{File, OpenOptions},
+    fs::{File, OpenOptions, Permissions},
     io,
     path::Path,
 };
 
 pub trait FileExt {
-    fn open_if_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>>
+    fn create_new_if_not_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
@@ -15,24 +15,28 @@ pub trait FileExt {
     where
         Self: Sized;
 
-    fn create_new_if_not_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>>
+    fn open_if_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>>
     where
         Self: Sized;
 
+    fn with_permissions(&self, perm: Permissions) -> io::Result<&Self>;
+
+    fn with_permissions_readonly(&self, readonly: bool) -> io::Result<&Self>;
+
     #[cfg(unix)]
-    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
+    fn with_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
-    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
+    fn add_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
     #[cfg(unix)]
-    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self>;
+    fn remove_permissions_mode(&self, mode: u32) -> io::Result<&Self>;
 }
 
 impl FileExt for File {
     #[inline]
-    fn open_if_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
-        match Self::open(path) {
+    fn create_new_if_not_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
+        match Self::create_new(path) {
             Ok(file) => Ok(Some(file)),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
             Err(err) => Err(err),
         }
     }
@@ -47,67 +51,8 @@ impl FileExt for File {
     }
 
     #[inline]
-    fn create_new_if_not_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
-        match Self::create_new(path) {
-            Ok(file) => Ok(Some(file)),
-            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
-            Err(err) => Err(err),
-        }
-    }
-
-    #[cfg(unix)]
-    #[inline]
-    fn set_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
-        let metadata = self.metadata()?;
-
-        let mut permissions = metadata.permissions();
-
-        permissions.set_mode(permissions_mode);
-
-        self.set_permissions(permissions)?;
-
-        Ok(self)
-    }
-
-    #[cfg(unix)]
-    #[inline]
-    fn add_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
-        let metadata = self.metadata()?;
-
-        let mut permissions = metadata.permissions();
-
-        permissions.set_mode(permissions.mode() | permissions_mode);
-
-        self.set_permissions(permissions)?;
-
-        Ok(self)
-    }
-
-    #[cfg(unix)]
-    #[inline]
-    fn remove_permissions_mode(&self, permissions_mode: u32) -> io::Result<&Self> {
-        let metadata = self.metadata()?;
-
-        let mut permissions = metadata.permissions();
-
-        permissions.set_mode(permissions.mode() & !permissions_mode);
-
-        self.set_permissions(permissions)?;
-
-        Ok(self)
-    }
-}
-
-pub trait OpenOptionsExt {
-    fn open_if_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>>;
-
-    fn open_if_not_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>>;
-}
-
-impl OpenOptionsExt for OpenOptions {
-    #[inline]
-    fn open_if_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>> {
-        match self.open(path) {
+    fn open_if_exists(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
+        match Self::open(path) {
             Ok(file) => Ok(Some(file)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
@@ -115,10 +60,72 @@ impl OpenOptionsExt for OpenOptions {
     }
 
     #[inline]
+    fn with_permissions(&self, perm: Permissions) -> io::Result<&Self> {
+        self.set_permissions(perm)?;
+
+        Ok(self)
+    }
+
+    #[inline]
+    fn with_permissions_readonly(&self, readonly: bool) -> io::Result<&Self> {
+        let meta = self.metadata()?;
+
+        let mut perm = meta.permissions();
+
+        perm.set_readonly(readonly);
+
+        self.with_permissions(perm)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn with_permissions_mode(&self, mode: u32) -> io::Result<&Self> {
+        let perm = Permissions::from_mode(mode);
+
+        self.with_permissions(perm)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn add_permissions_mode(&self, mode: u32) -> io::Result<&Self> {
+        let meta = self.metadata()?;
+
+        let perm = meta.permissions();
+
+        self.with_permissions_mode(perm.mode() | mode)
+    }
+
+    #[cfg(unix)]
+    #[inline]
+    fn remove_permissions_mode(&self, mode: u32) -> io::Result<&Self> {
+        let meta = self.metadata()?;
+
+        let perm = meta.permissions();
+
+        self.with_permissions_mode(perm.mode() & !mode)
+    }
+}
+
+pub trait OpenOptionsExt {
+    fn open_if_not_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>>;
+    fn open_if_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>>;
+}
+
+impl OpenOptionsExt for OpenOptions {
+    #[inline]
     fn open_if_not_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>> {
         match self.open(path) {
             Ok(file) => Ok(Some(file)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    #[inline]
+    fn open_if_exists(&self, path: impl AsRef<Path>) -> io::Result<Option<File>> {
+        match self.open(path) {
+            Ok(file) => Ok(Some(file)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
     }
